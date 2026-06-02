@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Inscription — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-header">
+      <span class="logo">💰</span>
+      <h1>BudgetCollab</h1>
+      <p>Créer un compte</p>
+    </div>
+    <div class="auth-card">
+      <div id="err-box" class="alert alert-error hidden"></div>
+      <div id="ok-box"  class="alert alert-success hidden"></div>
+      <div class="form-group">
+        <label class="form-label">Nom complet</label>
+        <input class="form-control" type="text" id="name" placeholder="Votre nom" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-control" type="email" id="email" placeholder="votre@email.tn" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <input class="form-control" type="password" id="password" placeholder="Minimum 6 caractères" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary w-full mt-4" id="btn-reg" style="justify-content:center">Créer mon compte</button>
+      <p style="text-align:center;margin-top:1.125rem;font-size:.8125rem;color:var(--muted)">
+        Déjà inscrit ? <a href="login.html" style="color:var(--accent);font-weight:600">Se connecter</a>
+      </p>
+    </div>
+  </div>
+</div>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+Auth.guestGuard();
+const errBox=document.getElementById('err-box'),okBox=document.getElementById('ok-box'),btn=document.getElementById('btn-reg');
+btn.addEventListener('click',async()=>{
+  errBox.classList.add('hidden');okBox.classList.add('hidden');
+  btn.disabled=true;btn.textContent='Inscription…';
+  const d=await api.post('auth/register',{name:document.getElementById('name').value,email:document.getElementById('email').value,password:document.getElementById('password').value});
+  if(d.success){okBox.textContent=d.message;okBox.classList.remove('hidden');}
+  else{errBox.textContent=d.message||"Erreur lors de l'inscription.";errBox.classList.remove('hidden');}
+  btn.disabled=false;btn.textContent='Créer mon compte';
+});
+</script>
+</body>
+</html>

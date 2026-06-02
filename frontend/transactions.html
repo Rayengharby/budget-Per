@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Transactions — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div class="page-top">
+      <div>
+        <h2>💳 Transactions</h2>
+        <p id="tx-count" style="color:var(--muted);font-size:.875rem">0 opération(s) enregistrée(s)</p>
+      </div>
+      <button class="btn btn-primary" id="btn-add">+ Nouvelle transaction</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+      <select class="form-control" id="f-type" style="width:auto;flex:1;min-width:130px">
+        <option value="">Tous types</option>
+        <option value="income">📈 Revenus</option>
+        <option value="expense">📉 Dépenses</option>
+      </select>
+      <select class="form-control" id="f-cat" style="width:auto;flex:1;min-width:150px">
+        <option value="">Toutes catégories</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="btn-reset-filters">Réinitialiser</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Description</th><th>Catégorie</th><th>Budget</th><th>Type</th><th>Montant</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="tx-tbody"><tr><td colspan="7"><div class="loader-wrap"><div class="spinner"></div></div></td></tr></tbody>
+        </table>
+      </div>
+      <div id="pagination" class="hidden" style="display:flex;justify-content:center;gap:.5rem;padding:1rem;border-top:1px solid var(--border)">
+        <button class="btn btn-ghost btn-sm" id="btn-prev">← Préc.</button>
+        <span id="pag-info" style="font-size:.8125rem;color:var(--muted);align-self:center"></span>
+        <button class="btn btn-ghost btn-sm" id="btn-next">Suiv. →</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modal-title">Nouvelle transaction</h3>
+      <button class="modal-close-btn" id="modal-close">×</button>
+    </div>
+    <div id="modal-err" class="alert alert-error hidden"></div>
+
+    <div class="form-group">
+      <label class="form-label">Type *</label>
+      <div class="type-toggle">
+        <button type="button" class="type-btn expense sel" id="tb-expense" onclick="setType('expense')">📉 Dépense</button>
+        <button type="button" class="type-btn income"      id="tb-income"  onclick="setType('income')">📈 Revenu</button>
+      </div>
+      <input type="hidden" id="f-type-val" value="expense">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Montant (TND) *</label>
+        <input class="form-control" type="number" step="0.01" min="0.01" id="f-amount" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input class="form-control" type="date" id="f-date">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description *</label>
+      <input class="form-control" type="text" id="f-desc" placeholder="Ex: Courses, Salaire, etc." maxlength="200">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Catégorie</label>
+      <select class="form-control" id="f-cat-modal">
+        <option value="">-- Aucune catégorie --</option>
+      </select>
+      <p id="no-cat-hint" class="form-hint hidden">💡 Aucune catégorie. Créez-en depuis la page "Catégories".</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Budget associé <span id="budget-count" style="color:var(--green);font-size:.75rem"></span></label>
+      <select class="form-control" id="f-budget-modal"><option value="">-- Aucun budget --</option></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Commentaire</label>
+      <textarea class="form-control" id="f-comment" placeholder="Note optionnelle..."></textarea>
+    </div>
+    <button type="button" class="btn btn-primary w-full mt-4" id="btn-save" style="justify-content:center">✅ Ajouter la transaction</button>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('transactions');
+
+let page=1, total=0, limit=15, editId=null, categories=[], budgets=[];
+// Store transactions by id to avoid fragile JSON-in-onclick
+const txMap = new Map();
+
+// Type toggle
+function setType(t) {
+  document.getElementById('f-type-val').value = t;
+  document.getElementById('tb-expense').className = 'type-btn expense'+(t==='expense'?' sel':'');
+  document.getElementById('tb-income').className  = 'type-btn income' +(t==='income' ?' sel':'');
+}
+
+// Load selects
+async function loadSelects() {
+  const [cRes, bRes] = await Promise.all([api.get('categories'), api.get('budgets')]);
+  categories = cRes.categories || [];
+  budgets    = bRes.budgets    || [];
+
+  // Filter category select (table)
+  const fc = document.getElementById('f-cat');
+  fc.innerHTML = '<option value="">Toutes catégories</option>';
+  categories.forEach(c => fc.insertAdjacentHTML('beforeend',`<option value="${c.id}">${c.icon} ${c.name}</option>`));
+
+  // Modal category select
+  const fcm = document.getElementById('f-cat-modal');
+  fcm.innerHTML = '<option value="">-- Aucune catégorie --</option>';
+  if (!categories.length) {
+    document.getElementById('no-cat-hint').classList.remove('hidden');
+  } else {
+    categories.forEach(c => fcm.insertAdjacentHTML('beforeend',`<option value="${c.id}">${c.icon} ${c.name}</option>`));
+  }
+
+  // Budget select
+  const fbm = document.getElementById('f-budget-modal');
+  fbm.innerHTML = '<option value="">-- Aucun budget --</option>';
+  budgets.forEach(b => fbm.insertAdjacentHTML('beforeend',`<option value="${b.id}">${b.isShared?'👥':'👤'} ${b.name}${b.globalLimit?' ('+fmt(b.globalLimit)+')':''}</option>`));
+  if (budgets.length) document.getElementById('budget-count').textContent=`(${budgets.length} disponible(s))`;
+}
+
+// Load transactions
+async function loadTx() {
+  const type = document.getElementById('f-type').value;
+  const cat  = document.getElementById('f-cat').value;
+  const params = new URLSearchParams({page,limit});
+  if (type) params.set('type',type);
+  if (cat)  params.set('category',cat);
+
+  const tbody = document.getElementById('tx-tbody');
+  tbody.innerHTML='<tr><td colspan="7"><div class="loader-wrap"><div class="spinner"></div></div></td></tr>';
+
+  const d = await api.get(`transactions?${params}`);
+  if (!d.success) { tbody.innerHTML='<tr><td colspan="7" style="padding:2rem;text-align:center;color:var(--muted)">Erreur de chargement.</td></tr>'; return; }
+
+  total = d.total;
+  document.getElementById('tx-count').textContent = `${total} opération(s) enregistrée(s)`;
+
+  // Store in map for safe edit access
+  txMap.clear();
+  d.transactions.forEach(t => txMap.set(t.id, t));
+
+  if (!d.transactions.length) {
+    tbody.innerHTML='<tr><td colspan="7"><div class="empty"><span class="empty-icon">💸</span><h3>Aucune transaction trouvée.</h3></div></td></tr>';
+  } else {
+    tbody.innerHTML = d.transactions.map(t=>{
+      const catEl = t.category?.name
+        ? `<span class="cat-pill" style="background:${t.category.color||'#6b728022'};color:${t.category.color||'var(--muted)'}">${t.category.icon||''} ${t.category.name}</span>`
+        : `<span style="color:var(--muted)">—</span>`;
+      const budgetName = t.budgetId ? budgets.find(b=>b.id===t.budgetId)?.name : null;
+      const budgetEl = budgetName
+        ? `<span style="background:rgba(108,99,255,.13);color:var(--accent);border-radius:20px;padding:2px 8px;font-size:.75rem">👥 ${budgetName}</span>`
+        : `<span style="color:var(--muted)">—</span>`;
+      return `
+      <tr>
+        <td class="text-muted">${fmtDate(t.date)}</td>
+        <td>${t.description}${t.comment?`<div class="text-xs text-muted">💬 ${t.comment}</div>`:''}</td>
+        <td>${catEl}</td>
+        <td>${budgetEl}</td>
+        <td><span class="badge badge-${t.type}">${t.type==='income'?'📈 Revenu':'📉 Dépense'}</span></td>
+        <td class="font-bold" style="color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td>
+        <td>
+          <div class="flex gap-2">
+            <button class="btn-icon btn-icon-acc" onclick="openEditById(${t.id})">✏️</button>
+            <button class="btn-icon btn-icon-red" onclick="deleteTx(${t.id})">🗑️</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  const pages = Math.ceil(total/limit);
+  const pag = document.getElementById('pagination');
+  if (pages > 1) {
+    pag.style.display='flex'; pag.classList.remove('hidden');
+    document.getElementById('pag-info').textContent = `${Math.min((page-1)*limit+1,total)}–${Math.min(page*limit,total)} sur ${total}`;
+    document.getElementById('btn-prev').disabled = page<=1;
+    document.getElementById('btn-next').disabled = page*limit>=total;
+  } else { pag.classList.add('hidden'); }
+}
+
+// Modal open/close
+function openModal(title='Nouvelle transaction') {
+  document.getElementById('modal-title').textContent=title;
+  document.getElementById('modal-err').classList.add('hidden');
+  document.getElementById('f-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('modal').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  document.getElementById('f-amount').value='';
+  document.getElementById('f-desc').value='';
+  document.getElementById('f-cat-modal').value='';
+  document.getElementById('f-budget-modal').value='';
+  document.getElementById('f-comment').value='';
+  setType('expense');
+  editId=null;
+}
+
+// Safe edit — lookup from map, no JSON in onclick
+function openEditById(id) {
+  const t = txMap.get(id);
+  if (!t) return;
+  editId=t.id;
+  openModal('✏️ Modifier');
+  setType(t.type);
+  document.getElementById('f-amount').value  = t.amount;
+  document.getElementById('f-desc').value    = t.description;
+  document.getElementById('f-date').value    = t.date ? t.date.slice(0,10) : '';
+  document.getElementById('f-cat-modal').value    = t.category?.id || '';
+  document.getElementById('f-budget-modal').value = t.budgetId || '';
+  document.getElementById('f-comment').value = t.comment || '';
+  document.getElementById('btn-save').textContent='💾 Mettre à jour';
+}
+
+document.getElementById('btn-add').addEventListener('click',()=>{
+  document.getElementById('btn-save').textContent='✅ Ajouter la transaction';
+  openModal();
+});
+document.getElementById('modal-close').addEventListener('click',closeModal);
+
+document.getElementById('btn-save').addEventListener('click',async()=>{
+  const errEl  = document.getElementById('modal-err');
+  const amount = parseFloat(document.getElementById('f-amount').value);
+  const desc   = document.getElementById('f-desc').value.trim();
+
+  if (!amount || !desc) {
+    errEl.textContent='Montant et description sont obligatoires.';
+    errEl.classList.remove('hidden'); return;
+  }
+  if (amount <= 0) {
+    errEl.textContent='Le montant doit être supérieur à 0.';
+    errEl.classList.remove('hidden'); return;
+  }
+
+  const cat    = document.getElementById('f-cat-modal').value || null;
+  const budget = document.getElementById('f-budget-modal').value || null;
+  const comment= document.getElementById('f-comment').value || null;
+
+  const body = {
+    type:        document.getElementById('f-type-val').value,
+    amount,
+    description: desc,
+    date:        document.getElementById('f-date').value,
+    category:    cat,
+    budget:      budget,
+    comment:     comment,
+  };
+
+  const d = editId ? await api.put(`transactions/${editId}`,body) : await api.post('transactions',body);
+  if (d.success) {
+    showToast(editId?'Transaction modifiée.':'Transaction ajoutée.','success');
+    closeModal(); loadTx();
+  } else {
+    errEl.textContent = d.message;
+    errEl.classList.remove('hidden');
+  }
+});
+
+async function deleteTx(id) {
+  if (!confirm('Supprimer cette transaction définitivement ?')) return;
+  const d = await api.delete(`transactions/${id}`);
+  if (d.success) { showToast('Transaction supprimée.','success'); loadTx(); }
+  else showToast(d.message,'error');
+}
+
+document.getElementById('f-type').addEventListener('change',()=>{page=1;loadTx();});
+document.getElementById('f-cat').addEventListener('change',()=>{page=1;loadTx();});
+document.getElementById('btn-reset-filters').addEventListener('click',()=>{
+  document.getElementById('f-type').value='';
+  document.getElementById('f-cat').value='';
+  page=1; loadTx();
+});
+document.getElementById('btn-prev').addEventListener('click',()=>{page--;loadTx();});
+document.getElementById('btn-next').addEventListener('click',()=>{page++;loadTx();});
+
+loadSelects().then(()=>loadTx());
+</script>
+</body>
+</html>

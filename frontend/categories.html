@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Catégories — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .color-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:border-color .12s;flex-shrink:0}
+    .icon-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem}
+    .icon-search{flex:1}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div class="page-top">
+      <div><h2>🏷️ Catégories</h2><p style="color:var(--muted);font-size:.875rem">Gérez vos catégories de transactions</p></div>
+      <button class="btn btn-primary" id="btn-add">+ Nouvelle catégorie</button>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th style="width:56px">Icône</th><th>Nom</th><th>Couleur</th><th style="width:90px">Type</th><th style="width:100px">Actions</th></tr></thead>
+          <tbody id="cat-tbody"><tr><td colspan="5"><div class="loader-wrap"><div class="spinner"></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modal-title">Nouvelle catégorie</h3>
+      <button class="modal-close-btn" id="modal-close">×</button>
+    </div>
+    <form id="cat-form">
+      <div class="form-group">
+        <label class="form-label">Nom *</label>
+        <input class="form-control" type="text" id="c-name" required maxlength="50" placeholder="Ex: Restaurants">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Icône</label>
+        <div class="icon-row">
+          <div class="icon-preview" id="icon-preview">📦</div>
+          <input class="form-control icon-search" type="text" id="icon-search" placeholder="Rechercher une icône…">
+        </div>
+        <div class="icon-picker" id="icon-picker"></div>
+        <input type="hidden" id="c-icon" value="📦">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Couleur</label>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem" id="palette"></div>
+        <input class="form-control" type="color" id="c-color" value="#6b7280" style="height:38px;padding:2px 4px">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-cancel">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="btn-save">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('categories');
+
+const ICONS=['🍔','🍕','🍜','🥗','🥘','🍱','🥪','🍩','☕','🍺','🛒','🥦','🚗','🚌','✈️','🚂','🚲','⛽','🏍️','🚕','🏠','🔧','💡','📺','💻','📱','🛁','🪴','🔑','🧹','💊','🏥','🧴','💪','🧘','🏃','⚽','🎾','🏊','🎮','🎬','🎵','📚','🎲','🎯','🎸','💰','💳','📈','💼','🏦','💵','📊','🏷️','💎','🪙','👕','👗','👟','💍','🛍️','💄','👜','🕶️','🧥','🎓','✏️','📖','🔬','🧪','🖥️','💾','🌍','🏖️','🌴','🌺','🌿','🍀','🌙','⭐','❄️','📦','🎁','🌟','🔔','📌','🏆','🎀','🔒','💬'];
+const PALETTE=['#ef4444','#f97316','#f59e0b','#22c55e','#10b981','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#6b7280','#1e293b','#dc2626','#16a34a','#0284c7','#7c3aed'];
+
+let allCats=[], editId=null;
+
+function renderIconPicker(filter='') {
+  const cur=document.getElementById('c-icon').value;
+  const list=filter?ICONS.filter(i=>i.includes(filter)):ICONS;
+  document.getElementById('icon-picker').innerHTML=list.map(icon=>
+    `<button type="button" class="icon-btn${icon===cur?' active':''}" onclick="selectIcon('${icon}')">${icon}</button>`
+  ).join('');
+}
+
+function selectIcon(icon) {
+  document.getElementById('c-icon').value=icon;
+  document.getElementById('icon-preview').textContent=icon;
+  document.querySelectorAll('.icon-btn').forEach(b=>b.classList.toggle('active',b.textContent===icon));
+}
+
+function renderPalette() {
+  document.getElementById('palette').innerHTML=PALETTE.map(c=>
+    `<div class="color-dot" style="background:${c}" data-color="${c}" onclick="selectColor('${c}')" title="${c}"></div>`
+  ).join('');
+}
+
+function selectColor(c) {
+  document.getElementById('c-color').value=c;
+  document.querySelectorAll('.color-dot').forEach(el=>el.style.borderColor=el.dataset.color===c?'#fff':'transparent');
+}
+
+async function loadCats() {
+  const d=await api.get('categories');
+  if (!d.success) return;
+  allCats=d.categories;
+  const tbody=document.getElementById('cat-tbody');
+  if (!allCats.length) { tbody.innerHTML=`<tr><td colspan="5"><div class="empty"><span class="empty-icon">🏷️</span><h3>Aucune catégorie</h3></div></td></tr>`; return; }
+  tbody.innerHTML=allCats.map(c=>`
+    <tr>
+      <td><div style="width:38px;height:38px;border-radius:9px;background:${c.color}22;display:flex;align-items:center;justify-content:center;font-size:1.25rem">${c.icon}</div></td>
+      <td><strong>${c.name}</strong></td>
+      <td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:14px;height:14px;border-radius:50%;background:${c.color}"></div><code style="font-size:.75rem;color:var(--muted)">${c.color}</code></div></td>
+      <td><span class="badge ${c.isDefault?'badge-admin':'badge-user'}">${c.isDefault?'Défaut':'Perso'}</span></td>
+      <td>
+        <div class="flex gap-1">
+          <button class="btn-icon btn-icon-acc" onclick="openEdit(${c.id})">✏️</button>
+          <button class="btn-icon btn-icon-red" onclick="deleteCat(${c.id},'${c.name.replace(/'/g,"\\'")}')">🗑️</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function openModal(title='Nouvelle catégorie') {
+  document.getElementById('modal-title').textContent=title;
+  renderIconPicker(); renderPalette();
+  document.getElementById('modal').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  document.getElementById('cat-form').reset();
+  document.getElementById('c-icon').value='📦';
+  document.getElementById('icon-preview').textContent='📦';
+  document.getElementById('icon-search').value='';
+  editId=null;
+}
+function openEdit(id) {
+  const c=allCats.find(x=>x.id===id); if(!c) return;
+  editId=id; openModal('Modifier la catégorie');
+  document.getElementById('c-name').value=c.name;
+  selectIcon(c.icon);
+  document.getElementById('c-color').value=c.color;
+  setTimeout(()=>selectColor(c.color),50);
+}
+
+document.getElementById('btn-add').addEventListener('click',()=>{openModal();});
+document.getElementById('modal-close').addEventListener('click',closeModal);
+document.getElementById('modal-cancel').addEventListener('click',closeModal);
+document.getElementById('icon-search').addEventListener('input',e=>renderIconPicker(e.target.value.trim()));
+document.getElementById('c-color').addEventListener('input',()=>{document.querySelectorAll('.color-dot').forEach(el=>el.style.borderColor='transparent');});
+
+document.getElementById('cat-form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=document.getElementById('btn-save'); btn.disabled=true; btn.textContent='…';
+  const body={name:document.getElementById('c-name').value,icon:document.getElementById('c-icon').value||'📦',color:document.getElementById('c-color').value};
+  const d=editId?await api.put(`categories/${editId}`,body):await api.post('categories',body);
+  if(d.success){showToast(editId?'Catégorie modifiée.':'Catégorie créée.','success');closeModal();loadCats();}
+  else showToast(d.message,'error');
+  btn.disabled=false; btn.textContent='Enregistrer';
+});
+
+async function deleteCat(id,name){
+  if(!confirm(`Supprimer la catégorie « ${name} » ?`)) return;
+  const d=await api.delete(`categories/${id}`);
+  if(d.success){showToast('Catégorie supprimée.','success');loadCats();}
+  else showToast(d.message,'error');
+}
+
+loadCats();
+</script>
+</body>
+</html>

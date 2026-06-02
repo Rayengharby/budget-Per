@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Administration — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div class="page-top">
+      <div>
+        <h2>⚙️ Administration</h2>
+        <p style="color:var(--muted);font-size:.875rem">Panneau de contrôle — accès réservé aux administrateurs</p>
+      </div>
+    </div>
+
+    <div id="action-msg" class="hidden" style="background:rgba(34,197,94,.13);border-radius:8px;padding:.625rem 1rem;color:var(--green);font-size:.8125rem;margin-bottom:1rem;display:flex;justify-content:space-between">
+      <span id="action-text"></span>
+      <button onclick="this.parentElement.classList.add('hidden')" style="background:none;border:none;color:var(--green);cursor:pointer">×</button>
+    </div>
+    <div id="err-msg" class="alert alert-error hidden" style="margin-bottom:1rem"></div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-0" onclick="switchTab(0)">Vue d'ensemble</button>
+      <button class="tab-btn"        id="tab-1" onclick="switchTab(1)">Utilisateurs</button>
+      <button class="tab-btn"        id="tab-2" onclick="switchTab(2)">Budgets partagés</button>
+    </div>
+
+    <!-- Tab 0: Overview -->
+    <div id="content-0">
+      <div class="loader-wrap"><div class="spinner"></div></div>
+    </div>
+
+    <!-- Tab 1: Users -->
+    <div id="content-1" class="hidden">
+      <div class="loader-wrap"><div class="spinner"></div></div>
+    </div>
+
+    <!-- Tab 2: Shared Budgets -->
+    <div id="content-2" class="hidden">
+      <div class="loader-wrap"><div class="spinner"></div></div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.adminGuard()) throw '';
+buildSidebar('admin');
+
+let stats={}, users=[], budgets=[], currentTab=0;
+const currentUser=Auth.getUser();
+
+function switchTab(n) {
+  currentTab=n;
+  [0,1,2].forEach(i=>{
+    document.getElementById(`tab-${i}`).classList.toggle('active',i===n);
+    document.getElementById(`content-${i}`).classList.toggle('hidden',i!==n);
+  });
+}
+
+async function load() {
+  try {
+    const [sRes,uRes,bRes]=await Promise.all([api.get('admin/stats'),api.get('admin/users'),api.get('admin/budgets')]);
+    stats=sRes; users=uRes.users||[]; budgets=bRes.budgets||[];
+    renderOverview(); renderUsers(); renderBudgets();
+  } catch(e) { document.getElementById('err-msg').textContent='Erreur de chargement.'; document.getElementById('err-msg').classList.remove('hidden'); }
+}
+
+function renderOverview() {
+  const income=stats.globalStats?.find(s=>s._id==='income')?.total||0;
+  const expense=stats.globalStats?.find(s=>s._id==='expense')?.total||0;
+  const active=users.filter(u=>u.isActive).length;
+  const pending=users.filter(u=>!u.isActive).length;
+  const admins=users.filter(u=>u.role==='admin').length;
+  document.getElementById('content-0').innerHTML=`
+    <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Utilisateurs</span><span class="stat-icon">👥</span></div><div class="stat-value text-accent">${stats.users||0}</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Budgets</span><span class="stat-icon">🎯</span></div><div class="stat-value text-yellow">${stats.budgets||0}</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Transactions</span><span class="stat-icon">💳</span></div><div class="stat-value text-muted">${stats.transactions||0}</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Revenus globaux</span><span class="stat-icon">📈</span></div><div class="stat-value text-green">${fmt(income)}</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Dépenses globales</span><span class="stat-icon">📉</span></div><div class="stat-value text-red">${fmt(expense)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Statut des comptes</div>
+      <div style="display:flex;gap:2rem">
+        <div style="text-align:center"><div style="font-size:1.75rem;font-weight:900;color:var(--green)">${active}</div><div style="font-size:.75rem;color:var(--muted)">Actifs</div></div>
+        <div style="text-align:center"><div style="font-size:1.75rem;font-weight:900;color:var(--yellow)">${pending}</div><div style="font-size:.75rem;color:var(--muted)">En attente</div></div>
+        <div style="text-align:center"><div style="font-size:1.75rem;font-weight:900;color:var(--accent)">${admins}</div><div style="font-size:.75rem;color:var(--muted)">Admins</div></div>
+      </div>
+    </div>`;
+}
+
+function renderUsers() {
+  const el=document.getElementById('content-1');
+  if (!users.length) { el.innerHTML='<div class="card"><div class="empty"><span class="empty-icon">👥</span><h3>Aucun utilisateur</h3></div></div>'; return; }
+  el.innerHTML=`
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+        <h4 style="font-weight:700">Tous les utilisateurs</h4>
+        <span style="font-size:.75rem;color:var(--muted)">${users.length} compte(s)</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Utilisateur</th><th>Email</th><th>Rôle</th><th>Statut</th><th>Inscription</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${users.map((u,i)=>`
+              <tr>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <div style="width:32px;height:32px;border-radius:50%;background:${u.role==='admin'?'rgba(245,158,11,.2)':'rgba(108,99,255,.2)'};display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:${u.role==='admin'?'var(--yellow)':'var(--accent)'}">
+                      ${(u.name||'U').slice(0,2).toUpperCase()}
+                    </div>
+                    <strong>${u.name||'Sans nom'}</strong>
+                  </div>
+                </td>
+                <td class="text-muted">${u.email||'—'}</td>
+                <td>
+                  <select onchange="changeRole(${u.id},this.value)" style="background:${u.role==='admin'?'rgba(245,158,11,.13)':'rgba(108,99,255,.13)'};color:${u.role==='admin'?'var(--yellow)':'var(--accent)'};border:none;border-radius:6px;padding:4px 8px;font-size:.75rem;font-weight:700;cursor:pointer;font-family:inherit">
+                    <option value="user"  ${u.role==='user' ?'selected':''}>Utilisateur</option>
+                    <option value="admin" ${u.role==='admin'?'selected':''}>Administrateur</option>
+                  </select>
+                </td>
+                <td>${u.isActive?'<span class="badge badge-active">✅ Actif</span>':'<span class="badge badge-pending">⏳ En attente</span>'}</td>
+                <td class="text-muted text-sm">${fmtDate(u.createdAt)}</td>
+                <td>
+                  <div class="flex gap-1">
+                    ${!u.isActive
+                      ? `<button class="btn btn-success btn-sm" onclick="activateUser(${u.id})">✅ Activer</button>`
+                      : u.id!=currentUser.id ? `<button class="btn btn-ghost btn-sm" onclick="deactivateUser(${u.id})" style="color:var(--yellow);border-color:var(--yellow)">🚫 Désactiver</button>` : ''}
+                    ${u.id!=currentUser.id?`<button class="btn-icon btn-icon-red" onclick="deleteUser(${u.id})">🗑️</button>`:''}
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderBudgets() {
+  const el=document.getElementById('content-2');
+  el.innerHTML=`<div style="font-size:.8125rem;color:var(--muted);margin-bottom:.75rem">${budgets.length} budget(s) partagé(s) dans le système</div>`;
+  if (!budgets.length) { el.insertAdjacentHTML('beforeend','<div class="card" style="text-align:center;padding:1.875rem"><div class="empty-icon" style="display:block;margin-bottom:.75rem">💰</div><p style="color:var(--muted)">Aucun budget partagé.</p></div>'); return; }
+  el.insertAdjacentHTML('beforeend',budgets.map(b=>`
+    <div class="card mb-3" style="margin-bottom:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.625rem;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div style="font-size:.9375rem;font-weight:700">👥 ${b.name}</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">
+            Période : ${b.period==='monthly'?'Mensuelle':b.period==='weekly'?'Hebdomadaire':'Personnalisée'} · Créé le ${fmtDate(b.createdAt)}
+          </div>
+        </div>
+        <div style="text-align:right;font-size:.75rem;color:var(--muted)">
+          <div style="font-weight:600;color:var(--text)">${b.owner?.name||'?'}</div>
+          <div>${b.owner?.email||'?'}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.375rem">
+        <span style="background:rgba(108,99,255,.13);color:var(--accent);border-radius:6px;padding:2px 8px;font-size:.75rem;font-weight:600">Propriétaire : ${b.owner?.name||'?'}</span>
+        ${(b.members||[]).map(m=>`<span style="background:var(--border);color:var(--muted);border-radius:6px;padding:2px 8px;font-size:.75rem">👤 ${m.name||'?'}</span>`).join('')}
+      </div>
+      ${b.globalLimit?`<div style="margin-top:.625rem;font-size:.75rem;color:var(--muted)">Plafond : <span style="color:var(--text);font-weight:600">${fmt(b.globalLimit)}</span> · Seuil : <span style="color:var(--yellow)">${b.alertThreshold}%</span></div>`:''}
+    </div>`).join(''));
+}
+
+async function activateUser(id) {
+  const d=await api.patch(`admin/users/${id}/activate`,{});
+  if(d.success){showActionMsg('Compte activé avec succès !');load();}
+  else showActionMsg(d.message);
+}
+async function deactivateUser(id) {
+  if(!confirm('Désactiver ce compte utilisateur ?')) return;
+  const d=await api.patch(`admin/users/${id}/deactivate`,{});
+  if(d.success){showActionMsg('Compte désactivé.');load();}
+  else showActionMsg(d.message);
+}
+async function changeRole(id,role) {
+  const d=await api.patch(`admin/users/${id}/role`,{role});
+  if(d.success){showActionMsg(`Rôle changé en "${role}".`);load();}
+  else showActionMsg(d.message);
+}
+async function deleteUser(id) {
+  if(!confirm('Supprimer définitivement ce compte ?')) return;
+  const d=await api.delete(`admin/users/${id}`);
+  if(d.success){showActionMsg('Compte supprimé.');load();}
+  else showActionMsg(d.message);
+}
+
+function showActionMsg(msg){
+  const el=document.getElementById('action-msg');
+  document.getElementById('action-text').textContent=msg;
+  el.classList.remove('hidden');
+  setTimeout(()=>el.classList.add('hidden'),3000);
+}
+
+load();
+</script>
+</body>
+</html>

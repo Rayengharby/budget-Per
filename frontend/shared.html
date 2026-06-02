@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Budget partagé — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div id="loading" class="loader-wrap"><div class="spinner"></div></div>
+
+    <div id="empty-state" class="hidden" style="text-align:center;padding:5rem 1rem">
+      <div style="font-size:3.75rem;margin-bottom:1rem">👥</div>
+      <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:.5rem">Aucun budget partagé</h3>
+      <p style="color:var(--muted);font-size:.875rem;margin-bottom:.5rem">Vous n'avez pas encore de budget partagé.</p>
+      <p style="color:var(--muted);font-size:.8125rem">Créez un budget partagé depuis la page "Mes budgets" et invitez des membres.</p>
+    </div>
+
+    <div id="shared-ui" class="shared-layout hidden">
+      <!-- Sidebar list -->
+      <div class="shared-sidebar">
+        <h3 style="font-size:.75rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">👥 Budgets partagés (<span id="sb-count">0</span>)</h3>
+        <div id="budget-list"></div>
+      </div>
+
+      <!-- Detail -->
+      <div class="shared-content" id="detail-content">
+        <div style="text-align:center;padding:3.75rem;color:var(--muted)">Sélectionnez un budget partagé</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Add Member Modal -->
+<div id="modal-member" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h3 class="modal-title">➕ Ajouter un membre</h3>
+      <button class="modal-close-btn" id="close-member">×</button>
+    </div>
+    <div id="m-err" class="alert alert-error hidden"></div>
+    <div id="m-ok"  class="alert alert-success hidden"></div>
+    <label class="form-label">Email de l'utilisateur</label>
+    <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+      <input class="form-control" type="email" id="m-email" placeholder="email@exemple.com">
+      <button class="btn btn-primary" id="btn-add-member">Ajouter</button>
+    </div>
+    <p style="font-size:.75rem;color:var(--muted)">💡 L'utilisateur doit avoir un compte actif sur l'application.</p>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('shared');
+
+let sharedBudgets=[], selectedBudget=null;
+const currentUser = Auth.getUser();
+
+function memberAvatar(m, size=32) {
+  const name=m?.name||m?.email||'?';
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(108,99,255,.2);display:flex;align-items:center;justify-content:center;font-size:${size*.35}px;font-weight:700;color:var(--accent);border:2px solid var(--card);flex-shrink:0">${name.charAt(0).toUpperCase()}</div>`;
+}
+
+async function loadBudgets() {
+  const d=await api.get('budgets');
+  const all=d.budgets||[];
+  sharedBudgets=all.filter(b=>b.isShared);
+  document.getElementById('loading').classList.add('hidden');
+
+  if (!sharedBudgets.length) { document.getElementById('empty-state').classList.remove('hidden'); return; }
+  document.getElementById('shared-ui').classList.remove('hidden');
+  document.getElementById('sb-count').textContent=sharedBudgets.length;
+
+  const list=document.getElementById('budget-list');
+  list.innerHTML=sharedBudgets.map(b=>`
+    <button class="budget-list-btn" data-id="${b.id}" onclick="selectBudget(${b.id})">
+      <div style="font-weight:600">${b.name}</div>
+      <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">👤 ${b.owner?.name||'?'} · ${1+(b.members?.length||0)} membre(s)</div>
+    </button>`).join('');
+
+  selectBudget(sharedBudgets[0].id);
+}
+
+async function selectBudget(id) {
+  selectedBudget=sharedBudgets.find(b=>b.id===id);
+  document.querySelectorAll('.budget-list-btn').forEach(el=>el.classList.toggle('active',parseInt(el.dataset.id)===id));
+  document.getElementById('detail-content').innerHTML='<div class="loader-wrap"><div class="spinner"></div></div>';
+
+  const [sumRes, txRes]=await Promise.all([api.get(`budgets/${id}/summary`),api.get(`transactions?budget=${id}&limit=50`)]);
+  if (!sumRes.success) { document.getElementById('detail-content').innerHTML='<div class="empty"><span class="empty-icon">❌</span><h3>Erreur de chargement.</h3></div>'; return; }
+
+  const b=sumRes.budget, pct=Math.min(sumRes.pctGlobal||0,100);
+  const isOwner=b.ownerId==currentUser.id;
+  const txList=txRes.transactions||[];
+
+  // Status alert
+  let alertHtml='';
+  if (sumRes.status==='exceeded') alertHtml=`<div class="alert alert-error">🔴 <strong>Budget dépassé !</strong> Les dépenses ont excédé le plafond fixé.</div>`;
+  else if (sumRes.status==='warning') alertHtml=`<div class="alert alert-warn">⚠️ <strong>Seuil d'alerte atteint</strong> (${sumRes.pctGlobal}% consommé).</div>`;
+
+  const membersHtml=[b.owner,...(b.members||[])].map(m=>`
+    <div class="member-chip">
+      ${memberAvatar(m,28)}
+      <div>
+        <div style="font-size:.75rem;font-weight:600">${m?.name||m?.email}</div>
+        ${m?.id===b.ownerId?`<div style="font-size:.625rem;color:var(--accent)">Propriétaire</div>`:''}
+      </div>
+    </div>`).join('');
+
+  const txHtml=txList.length===0?
+    `<div class="empty"><span class="empty-icon">💸</span><h3>Aucune transaction pour ce budget.</h3></div>`:
+    txList.map((tx,i)=>`
+      <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1.25rem;border-bottom:${i<txList.length-1?'1px solid var(--border)':'none'};background:${i%2===0?'transparent':'rgba(255,255,255,.015)'}">
+        <div style="width:36px;height:36px;border-radius:10px;background:${tx.category?.color||'#6b7280'}22;display:flex;align-items:center;justify-content:center;font-size:1.125rem;flex-shrink:0">${tx.category?.icon||'📦'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.8125rem;font-weight:600">${tx.description}</div>
+          <div style="font-size:.6875rem;color:var(--muted);margin-top:.125rem">${tx.category?.name} · ${fmtDate(tx.date)}${tx.comment?` · 💬 ${tx.comment}`:''}</div>
+        </div>
+        <div style="font-size:.875rem;font-weight:700;color:${tx.type==='income'?'var(--green)':'var(--red)'}">${tx.type==='income'?'+':'-'}${fmt(tx.amount)}</div>
+        ${memberAvatar(tx.user,28)}
+      </div>`).join('');
+
+  document.getElementById('detail-content').innerHTML=`
+    ${alertHtml}
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">
+        <div>
+          <h2 style="font-size:1.25rem;font-weight:800;margin-bottom:.25rem">👥 ${b.name}</h2>
+          <div style="font-size:.8125rem;color:var(--muted)">${b.period==='monthly'?'Mensuel':b.period==='weekly'?'Hebdomadaire':'Personnalisé'} · Depuis le ${fmtDate(b.startDate)}</div>
+        </div>
+        ${isOwner?`<button class="btn btn-outline btn-sm" onclick="document.getElementById('modal-member').classList.remove('hidden');document.getElementById('m-err').classList.add('hidden');document.getElementById('m-ok').classList.add('hidden');document.getElementById('m-email').value=''">+ Ajouter un membre</button>`:''}
+      </div>
+
+      <div style="margin-bottom:1rem">
+        <div style="font-size:.75rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Membres (${1+(b.members?.length||0)})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem">${membersHtml}</div>
+      </div>
+
+      ${b.globalLimit?`
+      <div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:.5rem;font-size:.8125rem">
+          <span style="color:var(--muted)">Progression globale</span>
+          <span style="font-weight:700">${fmt(sumRes.totalSpent)} / ${fmt(b.globalLimit)}</span>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar ${sumRes.status}" style="width:${pct}%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:.6875rem;margin-top:.25rem">
+          <span style="color:var(--muted)">${pct}% utilisé</span>
+          <span style="font-weight:600;color:${sumRes.status==='ok'?'var(--green)':sumRes.status==='warning'?'var(--yellow)':'var(--red)'}">${sumRes.status==='ok'?'✅ Maîtrisé':sumRes.status==='warning'?'⚠️ Proche limite':'🔴 Dépassé'}</span>
+        </div>
+      </div>`:''}
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:.875rem 1.25rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <h4 style="font-size:.875rem;font-weight:700">Transactions du budget</h4>
+        <span style="font-size:.75rem;color:var(--muted)">${txList.length} opération(s)</span>
+      </div>
+      ${txHtml}
+    </div>`;
+}
+
+document.getElementById('btn-add-member').addEventListener('click',async()=>{
+  if (!selectedBudget) return;
+  const email=document.getElementById('m-email').value;
+  if (!email){document.getElementById('m-err').textContent='Email requis.';document.getElementById('m-err').classList.remove('hidden');return;}
+  const d=await api.post(`budgets/${selectedBudget.id}/members`,{email});
+  if (d.success){
+    document.getElementById('m-ok').textContent=d.message||'✅ Membre ajouté !';document.getElementById('m-ok').classList.remove('hidden');document.getElementById('m-email').value='';
+    setTimeout(()=>{document.getElementById('modal-member').classList.add('hidden');loadBudgets();},1500);
+  } else {document.getElementById('m-err').textContent=d.message;document.getElementById('m-err').classList.remove('hidden');}
+});
+document.getElementById('close-member').addEventListener('click',()=>document.getElementById('modal-member').classList.add('hidden'));
+
+loadBudgets();
+</script>
+</body>
+</html>

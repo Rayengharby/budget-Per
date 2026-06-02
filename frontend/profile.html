@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Mon profil — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main" style="max-width:640px">
+    <div class="page-top"><div><h2>👤 Mon Profil</h2><p style="color:var(--muted);font-size:.875rem">Gérer vos informations personnelles</p></div></div>
+
+    <!-- Identity card -->
+    <div class="card mb-4" style="margin-bottom:.875rem">
+      <div style="display:flex;align-items:center;gap:1.25rem">
+        <div class="profile-avatar" id="profile-avatar">??</div>
+        <div>
+          <div style="font-size:1.25rem;font-weight:800" id="p-name-display">—</div>
+          <div style="font-size:.8125rem;color:var(--muted);margin-top:.25rem" id="p-email-display">—</div>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem">
+            <span id="role-badge" class="badge">—</span>
+            <span class="badge badge-active">✅ Compte actif</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit profile -->
+    <div class="card mb-4" style="margin-bottom:.875rem">
+      <h3 style="font-size:1rem;font-weight:700;margin-bottom:1.25rem">Informations générales</h3>
+      <div id="profile-err" class="alert alert-error hidden"></div>
+      <div id="profile-ok"  class="alert alert-success hidden"></div>
+      <div class="form-group">
+        <label class="form-label">Nom complet</label>
+        <input class="form-control" type="text" id="p-name" placeholder="Votre nom">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-control" id="p-email" disabled>
+        <p class="form-hint">L'email ne peut pas être modifié.</p>
+      </div>
+      <button class="btn btn-primary" id="btn-save-profile">Sauvegarder</button>
+    </div>
+
+    <!-- Change password -->
+    <div class="card mb-4" style="margin-bottom:.875rem">
+      <h3 style="font-size:1rem;font-weight:700;margin-bottom:1.25rem">Sécurité — Changer le mot de passe</h3>
+      <div id="pwd-err" class="alert alert-error hidden"></div>
+      <div id="pwd-ok"  class="alert alert-success hidden"></div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe actuel</label>
+        <input class="form-control" type="password" id="p-curr" placeholder="Entrez votre mot de passe actuel">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <input class="form-control" type="password" id="p-new" placeholder="Minimum 6 caractères">
+        <div id="pwd-strength-wrap" class="hidden" style="margin-top:.375rem">
+          <div class="pwd-bars" id="pwd-bars">
+            <div class="pwd-bar"></div><div class="pwd-bar"></div><div class="pwd-bar"></div><div class="pwd-bar"></div>
+          </div>
+          <div id="pwd-label" style="font-size:.75rem;color:var(--muted);margin-top:.25rem">Trop court</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le nouveau mot de passe</label>
+        <input class="form-control" type="password" id="p-confirm" placeholder="Répétez le nouveau mot de passe">
+      </div>
+      <button class="btn btn-danger" id="btn-change-pwd">Changer le mot de passe</button>
+    </div>
+
+    <!-- Account info -->
+    <div class="card">
+      <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">Informations du compte</h3>
+      <div id="account-info" style="display:flex;flex-direction:column;gap:.75rem"></div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('profile');
+
+const roleLabel={admin:'Administrateur',user:'Utilisateur'};
+const roleColor={admin:'var(--yellow)',user:'var(--accent)'};
+
+async function loadProfile() {
+  const d=await api.get('users/me');
+  if (!d.success) return;
+  const u=d.user;
+  const initials=(u.name||'U').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('profile-avatar').textContent=initials;
+  document.getElementById('p-name-display').textContent=u.name;
+  document.getElementById('p-email-display').textContent=u.email;
+  document.getElementById('role-badge').textContent=roleLabel[u.role]||u.role;
+  document.getElementById('role-badge').style.cssText=`background:${roleColor[u.role]}22;color:${roleColor[u.role]};border-radius:6px;padding:3px 10px;font-size:.75rem;font-weight:700`;
+  document.getElementById('p-name').value=u.name;
+  document.getElementById('p-email').value=u.email;
+
+  const infoItems=[
+    ['🔑','Identifiant',u.id],
+    ['🛡️','Rôle',roleLabel[u.role]||u.role],
+    ['✅','Statut','Actif'],
+    ['📅','Membre depuis',u.createdAt?new Date(u.createdAt).toLocaleDateString('fr-TN',{year:'numeric',month:'long',day:'numeric'}):'—'],
+  ];
+  document.getElementById('account-info').innerHTML=infoItems.map(([icon,label,val])=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.625rem 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:.8125rem;color:var(--muted)">${icon} ${label}</span>
+      <span style="font-size:.8125rem;font-weight:600">${val}</span>
+    </div>`).join('');
+}
+
+// Password strength
+document.getElementById('p-new').addEventListener('input',e=>{
+  const v=e.target.value;
+  const wrap=document.getElementById('pwd-strength-wrap');
+  if (!v){wrap.classList.add('hidden');return;}
+  wrap.classList.remove('hidden');
+  const bars=document.querySelectorAll('.pwd-bar');
+  const thresholds=[6,8,10,12];
+  const colors=['var(--red)','var(--yellow)','var(--accent)','var(--green)'];
+  const labels=['Trop court','Faible','Moyen','Bon','Excellent'];
+  let level=0;
+  thresholds.forEach((t,i)=>{if(v.length>=t)level=i+1;});
+  bars.forEach((b,i)=>b.style.background=i<level?colors[Math.min(level-1,3)]:'var(--border)');
+  document.getElementById('pwd-label').textContent=labels[level];
+});
+
+document.getElementById('btn-save-profile').addEventListener('click',async()=>{
+  const errEl=document.getElementById('profile-err'),okEl=document.getElementById('profile-ok');
+  errEl.classList.add('hidden');okEl.classList.add('hidden');
+  const d=await api.put('users/me',{name:document.getElementById('p-name').value});
+  if(d.success){okEl.textContent='Profil mis à jour avec succès !';okEl.classList.remove('hidden');const u=Auth.getUser();u.name=d.user.name;Auth.save(Auth.getToken(),u);loadProfile();}
+  else{errEl.textContent=d.message;errEl.classList.remove('hidden');}
+  setTimeout(()=>{errEl.classList.add('hidden');okEl.classList.add('hidden');},3000);
+});
+
+document.getElementById('btn-change-pwd').addEventListener('click',async()=>{
+  const errEl=document.getElementById('pwd-err'),okEl=document.getElementById('pwd-ok');
+  errEl.classList.add('hidden');okEl.classList.add('hidden');
+  const curr=document.getElementById('p-curr').value,newP=document.getElementById('p-new').value,conf=document.getElementById('p-confirm').value;
+  if(!curr||!newP||!conf){errEl.textContent='Tous les champs sont requis.';errEl.classList.remove('hidden');return;}
+  if(newP!==conf){errEl.textContent='Les nouveaux mots de passe ne correspondent pas.';errEl.classList.remove('hidden');return;}
+  if(newP.length<6){errEl.textContent='Le mot de passe doit contenir au moins 6 caractères.';errEl.classList.remove('hidden');return;}
+  const d=await api.put('users/me/password',{currentPassword:curr,newPassword:newP});
+  if(d.success){okEl.textContent='Mot de passe modifié avec succès !';okEl.classList.remove('hidden');document.getElementById('p-curr').value='';document.getElementById('p-new').value='';document.getElementById('p-confirm').value='';document.getElementById('pwd-strength-wrap').classList.add('hidden');}
+  else{errEl.textContent=d.message;errEl.classList.remove('hidden');}
+  setTimeout(()=>{errEl.classList.add('hidden');okEl.classList.add('hidden');},4000);
+});
+
+loadProfile();
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Tableau de bord — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div id="neg-alert" class="alert alert-error hidden" style="margin-bottom:1rem">
+      ⚠️ Attention : vos dépenses dépassent vos revenus ce mois-ci.
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Revenus</span><span class="stat-icon">📈</span></div><div class="stat-value text-green" id="s-income">—</div><div class="stat-sub">Ce mois-ci</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Dépenses</span><span class="stat-icon">📉</span></div><div class="stat-value text-red" id="s-expense">—</div><div class="stat-sub">Ce mois-ci</div></div>
+      <div class="stat-card"><div class="stat-top"><span class="stat-label">Solde</span><span class="stat-icon">💳</span></div><div class="stat-value" id="s-balance">—</div><div class="stat-sub">Disponible</div></div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-title">Répartition</div>
+        <div class="chart-wrap"><canvas id="chart-doughnut"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Évolution des dépenses</div>
+        <div class="chart-wrap"><canvas id="chart-line"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div class="card-title" style="margin-bottom:0">Transactions récentes</div>
+        <a href="transactions.html" class="btn btn-ghost btn-sm">Voir tout</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Description</th><th>Catégorie</th><th>Type</th><th class="text-right">Montant</th></tr></thead>
+          <tbody id="recent-tbody"><tr><td colspan="5"><div class="loader-wrap"><div class="spinner"></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('dashboard');
+
+const user = Auth.getUser();
+// greeting
+document.querySelector('.main').insertAdjacentHTML('afterbegin',
+  `<div style="margin-bottom:1.25rem"><h2 style="font-size:1.375rem;font-weight:800;margin-bottom:.25rem">Bonjour, ${(user?.name||'').split(' ')[0]} 👋</h2><p style="color:var(--muted);font-size:.875rem">Résumé financier du mois en cours</p></div>`
+);
+
+let dChart, lChart;
+
+async function load() {
+  const [statsData, txData] = await Promise.all([api.get('transactions/stats/dashboard'), api.get('transactions?limit=8')]);
+
+  if (statsData.success) {
+    document.getElementById('s-income').textContent  = fmt(statsData.income);
+    document.getElementById('s-expense').textContent = fmt(statsData.expense);
+    const bal = document.getElementById('s-balance');
+    bal.textContent = fmt(statsData.balance);
+    bal.style.color = statsData.balance >= 0 ? 'var(--green)' : 'var(--red)';
+    if (statsData.balance < 0) document.getElementById('neg-alert').classList.remove('hidden');
+
+    const cats = statsData.byCategory;
+    if (dChart) dChart.destroy();
+    dChart = new Chart(document.getElementById('chart-doughnut'),{
+      type:'doughnut',
+      data:{labels:cats.map(c=>`${c.icon} ${c.name}`),datasets:[{data:cats.map(c=>c.total),backgroundColor:cats.map(c=>c.color),borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#7c82a8',font:{size:10},boxWidth:10}}}}
+    });
+
+    const mos=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+    const evo = statsData.evolution;
+    if (lChart) lChart.destroy();
+    lChart = new Chart(document.getElementById('chart-line'),{
+      type:'line',
+      data:{
+        labels:evo.map(e=>`${mos[e._id.month-1]} ${e._id.year}`),
+        datasets:[{label:'Dépenses',data:evo.map(e=>e.total),borderColor:'#6c63ff',backgroundColor:'rgba(108,99,255,.13)',fill:true,tension:.4}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#7c82a8'},grid:{color:'#2e3250'}},y:{ticks:{color:'#7c82a8'},grid:{color:'#2e3250'},beginAtZero:true}}}
+    });
+  }
+
+  const tbody = document.getElementById('recent-tbody');
+  if (txData.success && txData.transactions.length) {
+    tbody.innerHTML = txData.transactions.map(t=>`
+      <tr>
+        <td class="text-muted">${fmtDate(t.date)}</td>
+        <td>${t.description}${t.comment?`<div class="text-xs text-muted">💬 ${t.comment}</div>`:''}</td>
+        <td><span class="cat-pill" style="background:${t.category.color}22;color:${t.category.color}">${t.category.icon} ${t.category.name}</span></td>
+        <td><span class="badge badge-${t.type}">${t.type==='income'?'📈 Revenu':'📉 Dépense'}</span></td>
+        <td class="text-right font-bold" style="color:${t.type==='income'?'var(--green)':'var(--red)'}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</td>
+      </tr>`).join('');
+  } else {
+    tbody.innerHTML=`<tr><td colspan="5"><div class="empty"><span class="empty-icon">💸</span><h3>Aucune transaction</h3></div></td></tr>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+Options -Indexes
+
+# Prevent Apache from serving its own 401/403 pages (which trigger browser dialogs).
+# Our PHP always sends JSON + the correct WWW-Authenticate: Bearer header.
+ErrorDocument 401 " "
+ErrorDocument 403 " "
+
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]

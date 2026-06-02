@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Mes budgets — BudgetCollab</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-root"></div>
+  <main class="main">
+    <div class="page-top">
+      <div>
+        <h2>🎯 Mes Budgets</h2>
+        <p id="budget-count" style="color:var(--muted);font-size:.875rem">0 budget(s) au total</p>
+      </div>
+      <button class="btn btn-primary" id="btn-add">+ Créer un budget</button>
+    </div>
+
+    <div id="success-msg" class="hidden" style="background:rgba(34,197,94,.13);border-radius:8px;padding:.625rem 1rem;color:var(--green);font-size:.8125rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center">
+      <span id="success-text"></span>
+      <button onclick="this.parentElement.classList.add('hidden')" style="background:none;border:none;color:var(--green);cursor:pointer;font-size:1rem">×</button>
+    </div>
+
+    <div id="main-content">
+      <div class="loader-wrap"><div class="spinner"></div></div>
+    </div>
+  </main>
+</div>
+
+<!-- Create Budget Modal -->
+<div id="modal-create" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Créer un budget</h3>
+      <button class="modal-close-btn" id="close-create">×</button>
+    </div>
+    <div id="create-err" class="alert alert-error hidden"></div>
+
+    <div class="form-group">
+      <label class="form-label">Nom du budget</label>
+      <input class="form-control" type="text" id="b-name" placeholder="Ex : Budget familial mai 2025">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <div style="display:flex;gap:.5rem">
+        <button class="type-btn expense sel" id="tb-perso" onclick="setShared(false)" style="border-color:var(--accent);background:rgba(108,99,255,.13);color:var(--accent)">👤 Personnel</button>
+        <button class="type-btn income"      id="tb-shared" onclick="setShared(true)">👥 Partagé</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Période</label>
+      <select class="form-control" id="b-period">
+        <option value="monthly">Mensuelle</option>
+        <option value="weekly">Hebdomadaire</option>
+        <option value="custom">Personnalisée</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date de début</label>
+        <input class="form-control" type="date" id="b-start">
+      </div>
+      <div class="form-group" id="end-date-group" style="display:none">
+        <label class="form-label">Date de fin</label>
+        <input class="form-control" type="date" id="b-end">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Plafond global (TND) — optionnel</label>
+      <input class="form-control" type="number" min="0" step="1" id="b-limit" placeholder="Ex : 1500">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Seuil d'alerte : <span id="threshold-val" style="color:var(--yellow)">80%</span></label>
+      <input type="range" min="10" max="100" step="5" id="b-threshold" value="80">
+    </div>
+
+    <button class="btn btn-primary w-full mt-4" id="btn-create" style="justify-content:center;font-size:.9375rem">Créer le budget</button>
+  </div>
+</div>
+
+<!-- Add Member Modal -->
+<div id="modal-member" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h3 class="modal-title">Ajouter un membre</h3>
+      <button class="modal-close-btn" id="close-member">×</button>
+    </div>
+    <p id="member-budget-name" style="color:var(--muted);font-size:.8125rem;margin-bottom:1rem"></p>
+    <div id="member-err" class="alert alert-error hidden"></div>
+    <div id="member-ok"  class="alert alert-success hidden"></div>
+    <div style="display:flex;gap:.5rem">
+      <input class="form-control" type="email" id="member-email" placeholder="email@exemple.tn">
+      <button class="btn btn-primary" id="btn-add-member">Ajouter</button>
+    </div>
+    <p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">💡 L'utilisateur doit avoir un compte actif.</p>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (!Auth.guard()) throw '';
+buildSidebar('budgets');
+
+let budgets=[], isShared=false, memberBudgetId=null;
+const currentUser = Auth.getUser();
+
+function setShared(v) {
+  isShared=v;
+  document.getElementById('tb-perso').style.cssText=!v?'border-color:var(--accent);background:rgba(108,99,255,.13);color:var(--accent)':'';
+  document.getElementById('tb-shared').style.cssText= v?'border-color:var(--accent);background:rgba(108,99,255,.13);color:var(--accent)':'';
+}
+
+document.getElementById('b-period').addEventListener('change',e=>{
+  document.getElementById('end-date-group').style.display=e.target.value==='custom'?'block':'none';
+});
+document.getElementById('b-threshold').addEventListener('input',e=>{
+  document.getElementById('threshold-val').textContent=e.target.value+'%';
+});
+
+async function load() {
+  const d = await api.get('budgets');
+  budgets = d.budgets||[];
+  document.getElementById('budget-count').textContent=`${budgets.length} budget(s) au total`;
+
+  const personal = budgets.filter(b=>!b.isShared);
+  const shared   = budgets.filter(b=>b.isShared);
+  const el = document.getElementById('main-content');
+
+  el.innerHTML = `
+    <div style="margin-bottom:1.5rem">
+      <h3 style="font-size:.75rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">👤 Budgets personnels</h3>
+      ${personal.length===0?
+        `<div class="card" style="text-align:center;padding:1.875rem;color:var(--muted)">Aucun budget personnel.</div>`:
+        `<div class="budget-grid">${personal.map(renderCard).join('')}</div>`}
+    </div>
+    <div>
+      <h3 style="font-size:.75rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">👥 Budgets partagés</h3>
+      ${shared.length===0?
+        `<div class="card" style="text-align:center;padding:1.875rem;color:var(--muted)">Aucun budget partagé.</div>`:
+        `<div class="budget-grid">${shared.map(renderCard).join('')}</div>`}
+    </div>`;
+
+  // Load summaries async
+  budgets.filter(b=>b.globalLimit).forEach(b=>{
+    api.get(`budgets/${b.id}/summary`).then(s=>{
+      if(!s.success) return;
+      const pct=Math.min(s.pctGlobal||0,100);
+      const bar=document.getElementById(`pbar-${b.id}`);
+      const spent=document.getElementById(`spent-${b.id}`);
+      const spentPct=document.getElementById(`spent-pct-${b.id}`);
+      const statusEl=document.getElementById(`status-${b.id}`);
+      if(bar){bar.style.width=pct+'%';bar.className=`progress-bar ${s.status}`;}
+      if(spent){spent.textContent=fmt(s.totalSpent)+' / '+fmt(b.globalLimit);}
+      const statusLabel={ok:'✅ Maîtrisé',warning:'⚠️ Proche limite',exceeded:'🔴 Dépassé'};
+      const statusColor={ok:'var(--green)',warning:'var(--yellow)',exceeded:'var(--red)'};
+      if(spentPct){spentPct.textContent=pct+'% utilisé';}
+      if(statusEl){statusEl.textContent=statusLabel[s.status];statusEl.style.color=statusColor[s.status];}
+    });
+  });
+}
+
+function renderCard(b) {
+  const isOwner = b.ownerId == currentUser.id;
+  const memberAvatars = [b.owner,...(b.members||[])].slice(0,4).map((m,i)=>
+    `<div class="member-avatar" style="margin-left:${i>0?'-6px':'0'}" title="${m?.name||'?'}">${(m?.name||'?').slice(0,2).toUpperCase()}</div>`
+  ).join('');
+
+  return `
+  <div class="budget-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="display:flex;align-items:center;gap:.5rem;font-size:1rem;font-weight:700">
+          <span>${b.isShared?'👥':'👤'}</span> ${b.name}
+        </div>
+        <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">
+          ${b.period==='monthly'?'Mensuel':b.period==='weekly'?'Hebdomadaire':'Personnalisé'}
+          · Du ${fmtDate(b.startDate)}
+        </div>
+      </div>
+      <div style="display:flex;gap:.375rem">
+        ${b.isShared&&isOwner?`<button class="btn-icon" title="Ajouter un membre" onclick="openMember(${b.id})">👤+</button>`:''}
+        <button class="btn-icon btn-icon-red" onclick="deleteBudget(${b.id})">🗑️</button>
+      </div>
+    </div>
+
+    ${b.isShared?`<div class="member-avatars" style="margin-top:.25rem">${memberAvatars}<span style="font-size:.75rem;color:var(--muted);margin-left:.5rem">${1+(b.members?.length||0)} membre(s)</span></div>`:''}
+
+    ${b.globalLimit?`
+    <div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:.375rem;font-size:.8125rem">
+        <span style="color:var(--muted)">Consommé</span>
+        <span id="spent-${b.id}" style="font-weight:700;color:var(--muted)">— / ${fmt(b.globalLimit)}</span>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar ok" id="pbar-${b.id}" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:.6875rem;margin-top:.25rem">
+        <span id="spent-pct-${b.id}" style="color:var(--muted)">—% utilisé</span>
+        <span id="status-${b.id}" style="font-weight:600">—</span>
+      </div>
+    </div>`:``}
+
+    <div style="font-size:.75rem;color:var(--muted)">
+      Seuil d'alerte : <span style="color:var(--yellow);font-weight:600">${b.alertThreshold}%</span>
+      ${b.globalLimit?` · Plafond : <span style="color:var(--text);font-weight:600">${fmt(b.globalLimit)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+async function deleteBudget(id) {
+  if (!confirm('Supprimer ce budget ?')) return;
+  const d=await api.delete(`budgets/${id}`);
+  if(d.success){showSuccess('✅ Budget supprimé !');load();}
+  else showToast(d.message,'error');
+}
+
+function openMember(id) {
+  const b=budgets.find(x=>x.id===id); if(!b) return;
+  memberBudgetId=id;
+  document.getElementById('member-budget-name').innerHTML=`Budget : <strong style="color:var(--text)">${b.name}</strong>`;
+  document.getElementById('member-email').value='';
+  document.getElementById('member-err').classList.add('hidden');
+  document.getElementById('member-ok').classList.add('hidden');
+  document.getElementById('modal-member').classList.remove('hidden');
+}
+
+document.getElementById('btn-add-member').addEventListener('click',async()=>{
+  const email=document.getElementById('member-email').value;
+  if(!email){document.getElementById('member-err').textContent='Email requis.';document.getElementById('member-err').classList.remove('hidden');return;}
+  const d=await api.post(`budgets/${memberBudgetId}/members`,{email});
+  if(d.success){document.getElementById('member-ok').textContent=d.message;document.getElementById('member-ok').classList.remove('hidden');document.getElementById('member-email').value='';setTimeout(()=>{document.getElementById('modal-member').classList.add('hidden');load();},1200);}
+  else{document.getElementById('member-err').textContent=d.message;document.getElementById('member-err').classList.remove('hidden');}
+});
+
+// Create budget
+document.getElementById('btn-add').addEventListener('click',()=>{
+  document.getElementById('b-start').value=new Date().toISOString().slice(0,10);
+  document.getElementById('b-threshold').value=80;
+  document.getElementById('threshold-val').textContent='80%';
+  setShared(false);
+  document.getElementById('create-err').classList.add('hidden');
+  document.getElementById('modal-create').classList.remove('hidden');
+});
+document.getElementById('close-create').addEventListener('click',()=>document.getElementById('modal-create').classList.add('hidden'));
+document.getElementById('close-member').addEventListener('click',()=>document.getElementById('modal-member').classList.add('hidden'));
+
+document.getElementById('btn-create').addEventListener('click',async()=>{
+  const name=document.getElementById('b-name').value;
+  const start=document.getElementById('b-start').value;
+  if(!name||!start){document.getElementById('create-err').textContent='Nom et date de début requis.';document.getElementById('create-err').classList.remove('hidden');return;}
+  const d=await api.post('budgets',{name,period:document.getElementById('b-period').value,startDate:start,endDate:document.getElementById('b-end').value||null,globalLimit:document.getElementById('b-limit').value||null,alertThreshold:parseInt(document.getElementById('b-threshold').value),isShared});
+  if(d.success){showSuccess('✅ Budget créé avec succès !');document.getElementById('modal-create').classList.add('hidden');document.getElementById('b-name').value='';document.getElementById('b-limit').value='';load();}
+  else{document.getElementById('create-err').textContent=d.message;document.getElementById('create-err').classList.remove('hidden');}
+});
+
+function showSuccess(msg){const el=document.getElementById('success-msg');document.getElementById('success-text').textContent=msg;el.classList.remove('hidden');setTimeout(()=>el.classList.add('hidden'),3000);}
+
+load();
+</script>
+</body>
+</html>

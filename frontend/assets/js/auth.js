@@ -1,3 +1,19 @@
+// ── Theme management ─────────────────────────────────────────
+const Theme = {
+  get() { return localStorage.getItem('bc_theme') || 'dark'; },
+  set(t) { 
+    localStorage.setItem('bc_theme', t); 
+    if (t === 'light') {
+      document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
+    }
+  },
+  toggle() { this.set(this.get() === 'light' ? 'dark' : 'light'); },
+  init() { this.set(this.get()); }
+};
+Theme.init();
+
 // ── Auth helpers ───────────────────────────────────────────
 const Auth = {
   getToken() { return localStorage.getItem('bc_token'); },
@@ -56,11 +72,18 @@ function buildSidebar(activePage) {
             <div class="user-role-label">${roleLabel}</div>
           </div>
         </div>
+        <button class="btn-theme-toggle" id="theme-toggle" style="width:100%; padding:.5rem; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer; font-size:.75rem; font-weight:600; font-family:inherit; transition:all .2s; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;" title="Changer de thème">
+          ${Theme.get() === 'light' ? '🌙 <span class="theme-text">Sombre</span>' : '☀️ <span class="theme-text">Clair</span>'}
+        </button>
         <button class="btn-logout" id="btn-logout">Se déconnecter</button>
       </div>
     </aside>`;
 
   document.getElementById('btn-logout').addEventListener('click', ()=>Auth.logout());
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    Theme.toggle();
+    location.reload();
+  });
 }
 
 // ── Toast ────────────────────────────────────────────────────

@@ -23,15 +23,30 @@ class AdminController {
 
     public static function activate(int $id): void {
         $user=authenticate(); requireAdmin($user); $db=getDB();
+        $st=$db->prepare('SELECT id,name,email FROM users WHERE id=?'); $st->execute([$id]);
+        $targetUser=$st->fetch();
+        if (!$targetUser) { jsonResponse(['success'=>false,'message'=>'Utilisateur introuvable.'], 404); return; }
+        
         $st=$db->prepare('UPDATE users SET is_active=1 WHERE id=?'); $st->execute([$id]);
-        if (!$st->rowCount()) { jsonResponse(['success'=>false,'message'=>'Utilisateur introuvable.'], 404); return; }
+        
+        // Envoi de l'email via PHPMailer
+        sendStatusEmail($targetUser['email'], $targetUser['name'], 'active');
+        
         $st=$db->prepare('SELECT id,name,email,role,is_active,avatar,created_at FROM users WHERE id=?'); $st->execute([$id]);
         jsonResponse(['success'=>true,'message'=>'Compte activé.','user'=>fmtUser($st->fetch())], 200);
     }
 
     public static function deactivate(int $id): void {
         $user=authenticate(); requireAdmin($user); $db=getDB();
+        $st=$db->prepare('SELECT id,name,email FROM users WHERE id=?'); $st->execute([$id]);
+        $targetUser=$st->fetch();
+        if (!$targetUser) { jsonResponse(['success'=>false,'message'=>'Utilisateur introuvable.'], 404); return; }
+        
         $db->prepare('UPDATE users SET is_active=0 WHERE id=?')->execute([$id]);
+        
+        // Envoi de l'email via PHPMailer
+        sendStatusEmail($targetUser['email'], $targetUser['name'], 'deactive');
+        
         $st=$db->prepare('SELECT id,name,email,role,is_active,avatar,created_at FROM users WHERE id=?'); $st->execute([$id]);
         jsonResponse(['success'=>true,'message'=>'Compte désactivé.','user'=>fmtUser($st->fetch())], 200);
     }

@@ -73,12 +73,16 @@ async function load() {
     bal.style.color = statsData.balance >= 0 ? 'var(--green)' : 'var(--red)';
     if (statsData.balance < 0) document.getElementById('neg-alert').classList.remove('hidden');
 
+    const isLight = document.documentElement.classList.contains('light-theme');
+    const textColor = isLight ? '#64748b' : '#7c82a8';
+    const gridColor = isLight ? '#e2e8f0' : '#2e3250';
+
     const cats = statsData.byCategory;
     if (dChart) dChart.destroy();
     dChart = new Chart(document.getElementById('chart-doughnut'),{
       type:'doughnut',
       data:{labels:cats.map(c=>`${c.icon} ${c.name}`),datasets:[{data:cats.map(c=>c.total),backgroundColor:cats.map(c=>c.color),borderWidth:0}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#7c82a8',font:{size:10},boxWidth:10}}}}
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:textColor,font:{size:10},boxWidth:10}}}}
     });
 
     const mos=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
@@ -91,7 +95,7 @@ async function load() {
         datasets:[{label:'Dépenses',data:evo.map(e=>e.total),borderColor:'#6c63ff',backgroundColor:'rgba(108,99,255,.13)',fill:true,tension:.4}]
       },
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-        scales:{x:{ticks:{color:'#7c82a8'},grid:{color:'#2e3250'}},y:{ticks:{color:'#7c82a8'},grid:{color:'#2e3250'},beginAtZero:true}}}
+        scales:{x:{ticks:{color:textColor},grid:{color:gridColor}},y:{ticks:{color:textColor},grid:{color:gridColor},beginAtZero:true}}}
     });
   }
 

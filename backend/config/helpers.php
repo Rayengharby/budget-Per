@@ -1,4 +1,7 @@
 <?php
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
 // ── CORS Headers ───────────────────────────────────────────
 function setCorsHeaders(): void {
     header('Access-Control-Allow-Origin: *');
@@ -91,14 +94,64 @@ function fmtTransaction(array $r): array {
         'createdAt'   => $r['created_at'],
         'category'    => [
             'id'    => (int)$r['category_id'],
-            'name'  => $r['category_name']  ?? null,
-            'icon'  => $r['category_icon']  ?? null,
+            'name'  => $r['category_name'] ?? null,
+            'icon'  => $r['category_icon'] ?? null,
             'color' => $r['category_color'] ?? null,
         ],
         'user' => [
             'id'     => (int)$r['user_id'],
-            'name'   => $r['user_name']   ?? null,
+            'name'   => $r['user_name'] ?? null,
             'avatar' => $r['user_avatar'] ?? null,
         ],
     ];
 }
+
+function sendStatusEmail($userEmail, $username, $status) {
+    $mail = new PHPMailer(true);
+
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'rayen14865@gmail.com';
+        $mail->Password   = 'bgge xetl itiu fjer';
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+
+        // Destinataires
+        $mail->setFrom('noreply@budgetcollab.com', 'Budget Collab Admin');
+        $mail->addAddress($userEmail, $username);
+
+        // Contenu
+        $mail->isHTML(true);
+        $mail->Subject = "Mise a jour de votre compte - Budget Collab";
+
+        if ($status == 'active') {
+            $mail->Body = "
+                <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
+                    <h2 style='color: #22c55e;'>Compte Activé !</h2>
+                    <p>Bonjour <strong>$username</strong>,</p>
+                    <p>Bonne nouvelle ! Votre compte a été activé par l'administrateur.</p>
+                    <p>Vous pouvez maintenant vous connecter et profiter de nos services.</p>
+                    <br>
+                    <p>Cordialement,<br>L'équipe Budget Collab</p>
+                </div>";
+        } else {
+            $mail->Body = "
+                <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
+                    <h2 style='color: #ef4444;'>Compte Désactivé</h2>
+                    <p>Bonjour <strong>$username</strong>,</p>
+                    <p>Nous vous informons que votre compte a été désactivé par l'administrateur.</p>
+                    <p>Si vous pensez qu'il s'agit d'une erreur, veuillez contacter le support.</p>
+                    <br>
+                    <p>Cordialement,<br>L'équipe Budget Collab</p>
+                </div>";
+        }
+
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        return "L'e-mail n'a pas pu être envoyé. Erreur: {$mail->ErrorInfo}";
+    }
+}
+

@@ -15,7 +15,10 @@
         <h2>💳 Transactions</h2>
         <p id="tx-count" style="color:var(--muted);font-size:.875rem">0 opération(s) enregistrée(s)</p>
       </div>
-      <button class="btn btn-primary" id="btn-add">+ Nouvelle transaction</button>
+      <div style="display:flex; gap:.5rem">
+        <button class="btn btn-ghost" id="btn-pdf" onclick="downloadPDF()">📄 Télécharger PDF</button>
+        <button class="btn btn-primary" id="btn-add">+ Nouvelle transaction</button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -299,6 +302,47 @@ document.getElementById('btn-reset-filters').addEventListener('click',()=>{
 });
 document.getElementById('btn-prev').addEventListener('click',()=>{page--;loadTx();});
 document.getElementById('btn-next').addEventListener('click',()=>{page++;loadTx();});
+
+async function downloadPDF() {
+  const type = document.getElementById('f-type').value;
+  const cat  = document.getElementById('f-cat').value;
+  const params = new URLSearchParams();
+  if (type) params.set('type', type);
+  if (cat)  params.set('category', cat);
+
+  const token = Auth.getToken();
+  const url = `${API_URL}/transactions/pdf?${params}`;
+
+  const btn = document.getElementById('btn-pdf');
+  const originalText = btn.textContent;
+  btn.textContent = "⏳ Génération...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      }
+    });
+    if (!res.ok) {
+      showToast("Erreur lors de la génération du PDF", "error");
+      return;
+    }
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `transactions_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("PDF téléchargé avec succès", "success");
+  } catch (err) {
+    showToast("Erreur lors du téléchargement du PDF", "error");
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
 
 loadSelects().then(()=>loadTx());
 </script>

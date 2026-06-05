@@ -3,20 +3,36 @@ async function apiFetch(path, options = {}) {
   const token = Auth.getToken();
   const url   = `${API_URL}/${path.replace(/^\//, '')}`;
 
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
-      ...options.headers,
-    },
-    ...options,
-  });
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+        ...options.headers,
+      },
+      ...options,
+    });
 
-  const data = await res.json().catch(() => ({}));
+    // Handle non-JSON responses gracefully
+    const contentType = res.headers.get('Content-Type') || '';
+    if (contentType.includes('application/pdf')) {
+      return res; // Return raw response for PDF
+    }
 
-  if (res.status === 401) { Auth.logout(); return data; }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      data = { success: false, message: 'Réponse invalide du serveur.' };
+    }
 
-  return data;
+    if (res.status === 401) { Auth.logout(); return data; }
+
+    return data;
+  } catch (err) {
+    // Network error or CORS failure
+    return { success: false, message: 'Erreur de connexion au serveur. Vérifiez que XAMPP est démarré.' };
+  }
 }
 
 const api = {

@@ -1,12 +1,14 @@
 <?php
-// ── CORS & content type ────────────────────────────────────
-header('Content-Type: application/json; charset=utf-8');
+// ── Load Composer Autoloader ──────────────────────────────
+require_once __DIR__ . '/vendor/autoload.php';
 
-// ── Load helpers + controllers ─────────────────────────────
+// ── CORS Headers (always needed) ─────────────────────────
 require_once __DIR__ . '/config/helpers.php';
 setCorsHeaders();
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+
+// ── Load controllers ──────────────────────────────────────
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/TransactionController.php';
 require_once __DIR__ . '/controllers/BudgetController.php';
@@ -15,7 +17,6 @@ require_once __DIR__ . '/controllers/UserController.php';
 require_once __DIR__ . '/controllers/AdminController.php';
 
 // ── Parse URI ──────────────────────────────────────────────
-// PATH_INFO works in XAMPP without mod_rewrite (e.g. index.php/auth/login)
 $method = $_SERVER['REQUEST_METHOD'];
 $uri    = trim($_SERVER['PATH_INFO'] ?? '', '/');
 
@@ -44,9 +45,15 @@ $r1 = $seg[1] ?? '';   // id or sub-resource
 $r2 = $seg[2] ?? '';   // sub-sub-resource
 $r3 = $seg[3] ?? '';   // action
 
+// Set default content type for all routes except PDF export
+if (!($r0 === 'transactions' && $r1 === 'pdf')) {
+    header('Content-Type: application/json; charset=utf-8');
+}
+
 // ── Router ─────────────────────────────────────────────────
 try {
     switch ($r0) {
+
 
         // ── Auth ──────────────────────────────────────────
         case 'auth':
@@ -60,7 +67,9 @@ try {
 
         // ── Transactions ──────────────────────────────────
         case 'transactions':
-            if ($r1 === 'stats' && $r2 === 'dashboard') {
+            if ($r1 === 'pdf') {
+                $method === 'GET' ? TransactionController::exportPdf() : notFound();
+            } elseif ($r1 === 'stats' && $r2 === 'dashboard') {
                 $method === 'GET' ? TransactionController::stats() : notFound();
             } elseif ($r1 !== '') {
                 match($method) {

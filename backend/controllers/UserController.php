@@ -6,8 +6,11 @@ require_once __DIR__ . '/../middleware/auth.php';
 class UserController {
 
     public static function me(): void {
-        $user=authenticate();
-        jsonResponse(['success'=>true,'user'=>$user], 200);
+        $user=authenticate(); $db=getDB();
+        $st=$db->prepare('SELECT id,name,email,role,is_active,avatar,created_at FROM users WHERE id=?'); $st->execute([$user['id']]);
+        $row=$st->fetch();
+        if (!$row) { jsonResponse(['success'=>false,'message'=>'Utilisateur introuvable.'], 404); return; }
+        jsonResponse(['success'=>true,'user'=>fmtUser($row)], 200);
     }
 
     public static function update(): void {

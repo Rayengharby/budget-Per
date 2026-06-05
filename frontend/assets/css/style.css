@@ -235,4 +235,29 @@ input[type=range]{width:100%;accent-color:var(--yellow)}
   .main{padding:1rem}
   .shared-layout{flex-direction:column;height:auto}
   .shared-sidebar{width:100%;flex-direction:row;overflow-x:auto}
+  .theme-text {display:none}
+  .btn-logout { font-size: 0; }
+  .btn-logout::after { content: '🚪'; font-size: 1rem; }
 }
+
+/* ── Light Theme Overrides ─────────────────── */
+.light-theme {
+  --bg:      #f4f5f7;
+  --surface: #ffffff;
+  --card:    #ffffff;
+  --border:  #e2e8f0;
+  --accent:  #4f46e5;
+  --accentL: #6366f1;
+  --text:    #0f172a;
+  --muted:   #64748b;
+}
+.light-theme tbody tr:hover { background: rgba(0,0,0,0.02) !important; }
+.light-theme tbody tr:nth-child(even) { background: rgba(0,0,0,0.01) !important; }
+.light-theme .btn-theme-toggle { color: var(--text) !important; }
+.light-theme .btn-ghost:hover { background: #f8fafc; }
+.light-theme .type-btn:hover { background: #f8fafc; }
+.light-theme .icon-picker { background: #f8fafc; }
+.light-theme .nav-item:hover { background: #f1f5f9; color: var(--text); }
+.light-theme .nav-item.active { background: rgba(79,70,229,.1); color: var(--accent); }
+.light-theme .sidebar-user .user-avatar { background: rgba(79,70,229,.1); color: var(--accent); }
+
